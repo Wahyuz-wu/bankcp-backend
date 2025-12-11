@@ -80,6 +80,8 @@ app.post('/predict', (req, res) => {
 const reportsRouter = require('./routes/reports')(db); const createReportsRouter = require("./routes/reports");
 app.use("/reports", createReportsRouter(db));
 
+app.use("/", console.log("Bankcp Back-end"));
+
 app.use((req, res) => {
   console.log(`⚠️ [DEBUG] Route tidak ditemukan: ${req.method} ${req.originalUrl}`);
   res.status(404).json({ error: "Route not found" });
