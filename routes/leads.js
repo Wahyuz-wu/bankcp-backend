@@ -65,14 +65,11 @@ const createLeadsRouter = (db) => {
     }
   });
 
-  // READ all leads
-  router.get("/", async (req, res) => {
-    try {
-      const results = await runQuery(db, "SELECT * FROM leads ORDER BY lead_score DESC", []);
+  router.get("/", (req, res) => {
+    db.query("SELECT * FROM leads ORDER BY lead_score DESC", (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
       res.json(results);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
+    });
   });
 
   // READ single lead
