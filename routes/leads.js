@@ -23,8 +23,7 @@ const createLeadsRouter = (db) => {
     let leadScore = 0;
     try {
       const flaskResponse = await axios.post('https://web-production-059b.up.railway.app/predict',data);
-      // leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
-      leadScore = flaskResponse.data.lead_score ?? 0;
+      leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
     } catch (err) {
       console.error("❌ Error prediksi model:", err.message);
       return res.status(502).json({ success: false, message: "Model service unavailable" });
