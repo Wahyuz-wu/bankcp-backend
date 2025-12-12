@@ -21,25 +21,12 @@ const createLeadsRouter = (db) => {
     }
 
     let leadScore = 0;
-    const mlUrl = "https://web-production-059b.up.railway.app/predict";
-
     try {
-      const mlResp = await axios.post(mlUrl, data, { timeout: 15000 });
-      const mlValue =
-        mlResp.data.prediction ??
-        mlResp.data.probability ??
-        mlResp.data.lead_score ??
-        0;
-
-      if (mlValue <= 1) {
-        leadScore = Math.round(mlValue * 200 - 100);
-      } else {
-        leadScore = mlValue === 1 ? 100 : -100;
-      }
-
+      const flaskResponse = await axios.post('https://web-production-059b.up.railway.app/predict',data);
+      leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
     } catch (err) {
-      console.error("❌ Error calling ML API:", err.message);
-      leadScore = 0;
+      console.error("❌ Error prediksi model:", err.message);
+      return res.status(502).json({ success: false, message: "Model service unavailable" });
     }
 
     const sql = `
