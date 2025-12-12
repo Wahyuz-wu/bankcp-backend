@@ -26,7 +26,7 @@ const createLeadsRouter = (db) => {
     let leadScore = 0;
     try {
       const flaskResponse = await axios.post(
-        "https://web-production-542d.up.railway.app/predict",
+        "https://web-production-059b.up.railway.app/predict",
         data
       );
       leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
