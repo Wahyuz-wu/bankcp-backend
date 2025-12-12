@@ -7,7 +7,6 @@ const createReportsRouter = require('./routes/reports');
 const app = express();
 const port = 5000;
 
-// Koneksi ke database Railway
 const db = mysql.createConnection({
   host: "ballast.proxy.rlwy.net",
   user: "root",
@@ -27,7 +26,6 @@ db.connect(err => {
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-// Login route
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const sql = 'SELECT id, username, password, role FROM users WHERE username = ?';
@@ -41,22 +39,18 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Leads & Reports routes
 app.use('/leads', createLeadsRouter(db));
 app.use('/reports', createReportsRouter(db));
 
-// Root route
 app.get("/", (req, res) => {
   res.json({ message: "Bankcp Back-end" });
 });
 
-// Catch-all route
 app.use((req, res) => {
   console.log(`⚠️ [DEBUG] Route tidak ditemukan: ${req.method} ${req.originalUrl}`);
   res.status(404).json({ error: "Route not found" });
 });
 
-// Start server
 app.listen(port, () => {
   console.log(`🚀 Backend berjalan di http://localhost:${port}`);
 });

@@ -1,7 +1,6 @@
 const express = require("express");
 const axios = require("axios");
 
-// Helper untuk query DB dengan promise
 const runQuery = (db, sql, values) => {
   return new Promise((resolve, reject) => {
     db.query(sql, values, (err, result) => {
@@ -14,11 +13,9 @@ const runQuery = (db, sql, values) => {
 const createLeadsRouter = (db) => {
   const router = express.Router();
 
-  // CREATE lead
   router.post("/", async (req, res) => {
     const data = req.body;
 
-    // Validasi minimal
     if (!data.name || !data.phone_number) {
       return res.status(400).json({ success: false, message: "Nama dan nomor wajib diisi" });
     }
@@ -72,7 +69,6 @@ const createLeadsRouter = (db) => {
     });
   });
 
-  // READ single lead
   router.get("/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "ID tidak valid" });
@@ -86,7 +82,6 @@ const createLeadsRouter = (db) => {
     }
   });
 
-  // UPDATE lead
   router.patch("/:id", async (req, res) => {
     const leadId = req.params.id;
     const data = req.body;
@@ -123,7 +118,6 @@ const createLeadsRouter = (db) => {
     }
   });
 
-  // DELETE lead
   router.delete("/:id", async (req, res) => {
     const leadId = req.params.id;
     try {
