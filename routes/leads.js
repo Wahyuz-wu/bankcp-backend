@@ -1,87 +1,38 @@
 const express = require("express");
-const fs = require("fs");
-const path = require("path");
-const Papa = require("papaparse");
 const axios = require("axios");
 
-const loadCSV = async (db) => {
-  let rowsProcessed = 0;
-  let rowsSkipped = 0;
-  let rowsFailed = 0;
-
-  try {
-    const filePath = path.join(__dirname, "../ml/nasabah/X_test_rf.csv");
-    if (!fs.existsSync(filePath)) return console.log("CSV tidak ditemukan:", filePath);
-
-    const csvFile = fs.readFileSync(filePath, "utf8");
-    const parsed = Papa.parse(csvFile, { header: true, skipEmptyLines: true });
-
-    for (const row of parsed.data) {
-      if (!row.name) {
-        rowsSkipped++;
-        continue;
-      }
-
-      try {
-        let leadScore = 0;
-        try {
-          const flaskResponse = await axios.post(`https://bankcp-backend-production.up.railway.app/predict`, row);
-          leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
-        } catch (err) {
-          console.error("❌ Error prediksi model:", err.message);
-        }
-
-        const values = [
-          row.name, row.phone_number, Number(row.age) || 0, row.job, row.marital, row.education,
-          row.default || "no", row.housing || "no", row.loan || "no", row.contact, row.month,
-          row.day_of_week || "", Number(row.duration) || 0, Number(row.campaign) || 0,
-          Number(row.pdays) || 0, Number(row.previous) || 0, row.poutcome || "",
-          Number(row["emp.var.rate"]) || 0, Number(row["cons.price.idx"]) || 0,
-          Number(row["cons.conf.idx"]) || 0, Number(row.euribor3m) || 0, Number(row["nr.employed"]) || 0,
-          leadScore, "no call", JSON.stringify([]), "", "not subscribed"
-        ];
-
-        const sql = `
-          INSERT INTO leads (
-            name, phone_number, age, job, marital, education, default_status,
-            housing, loan, contact, month, day, duration, campaign, pdays, previous,
-            poutcome, emp_var_rate, cons_price_idx, cons_conf_idx, euribor3m, nr_employed,
-            lead_score, status_kampanye, aktivitas, alasan_status, subscription_status
-          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-          ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), age=VALUES(age), job=VALUES(job), lead_score=VALUES(lead_score)
-        `;
-
-        await new Promise((resolve, reject) => {
-          db.query(sql, values, (err, result) => {
-            if (err) return reject(err);
-            rowsProcessed++;
-            resolve(result);
-          });
-        });
-      } catch {
-        rowsFailed++;
-      }
-    }
-
-    console.log(`✅ CSV selesai. Berhasil: ${rowsProcessed}, Dilewati: ${rowsSkipped}, Gagal: ${rowsFailed}`);
-  } catch (err) {
-    console.error("Gagal load CSV:", err);
-  }
+// Helper untuk query DB dengan promise
+const runQuery = (db, sql, values) => {
+  return new Promise((resolve, reject) => {
+    db.query(sql, values, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+  });
 };
 
 const createLeadsRouter = (db) => {
   const router = express.Router();
 
+  // CREATE lead
   router.post("/", async (req, res) => {
     const data = req.body;
-    let leadScore = 0;
 
+    // Validasi minimal
+    if (!data.name || !data.phone_number) {
+      return res.status(400).json({ success: false, message: "Nama dan nomor wajib diisi" });
+    }
+
+    let leadScore = 0;
     try {
-      const flaskResponse = await axios.post(`https://bankcp-backend-production.up.railway.app/predict`, data);
+      const flaskResponse = await axios.post(
+        "https://web-production-059b.up.railway.app/predict",
+        data
+      );
       leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
     } catch (err) {
       console.error("❌ Error prediksi model:", err.message);
+      return res.status(502).json({ success: false, message: "Model service unavailable" });
     }
 
     const sql = `
@@ -89,8 +40,7 @@ const createLeadsRouter = (db) => {
         name, phone_number, age, job, marital, education, default_status, housing, loan,
         contact, month, day, duration, campaign, pdays, previous, poutcome,
         emp_var_rate, cons_price_idx, cons_conf_idx, euribor3m, nr_employed,
-        lead_score, status_kampanye, aktivitas, alasan_status, subscription_status,
-        gender
+        lead_score, status_kampanye, aktivitas, alasan_status, subscription_status, gender
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE
         name=VALUES(name), age=VALUES(age), job=VALUES(job), lead_score=VALUES(lead_score)
@@ -107,92 +57,91 @@ const createLeadsRouter = (db) => {
       data.alasan_status || "", data.subscription_status || "not subscribed", data.gender || ""
     ];
 
-    db.query(sql, values, (err, result) => {
-      if (err) return res.status(500).json({ success: false, message: err.message });
+    try {
+      const result = await runQuery(db, sql, values);
       res.status(201).json({ success: true, id: result.insertId, lead_score: leadScore });
-    });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
-  router.get("/", (req, res) => {
-    db.query("SELECT * FROM leads ORDER BY lead_score DESC", (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
+  // READ all leads
+  router.get("/", async (req, res) => {
+    try {
+      const results = await runQuery(db, "SELECT * FROM leads ORDER BY lead_score DESC", []);
       res.json(results);
-    });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
-  router.get("/:id", (req, res) => {
+  // READ single lead
+  router.get("/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "ID tidak valid" });
 
-    db.query("SELECT * FROM leads WHERE id = ?", [id], (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
+    try {
+      const results = await runQuery(db, "SELECT * FROM leads WHERE id = ?", [id]);
       if (!results.length) return res.status(404).json({ message: "Lead not found" });
       res.json(results[0]);
-    });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
-router.patch('/:id', (req, res) => {
-        const leadId = req.params.id;
-        const data = req.body; 
+  // UPDATE lead
+  router.patch("/:id", async (req, res) => {
+    const leadId = req.params.id;
+    const data = req.body;
 
-        const sql = `
-            UPDATE leads SET 
-                name = ?, phone_number = ?, age = ?, job = ?, marital = ?, education = ?, 
-                default_status = ?, housing = ?, loan = ?, contact = ?, duration = ?, 
-                campaign = ?, pdays = ?, previous = ?, poutcome = ?, 
-                emp_var_rate = ?, cons_price_idx = ?, cons_conf_idx = ?, euribor3m = ?, 
-                nr_employed = ?, lead_score = ?, status_kampanye = ?,
-                gender = ?, month = ?, day = ?
-            WHERE id = ?
-        `;
+    const sql = `
+      UPDATE leads SET 
+        name = ?, phone_number = ?, age = ?, job = ?, marital = ?, education = ?, 
+        default_status = ?, housing = ?, loan = ?, contact = ?, duration = ?, 
+        campaign = ?, pdays = ?, previous = ?, poutcome = ?, 
+        emp_var_rate = ?, cons_price_idx = ?, cons_conf_idx = ?, euribor3m = ?, 
+        nr_employed = ?, lead_score = ?, status_kampanye = ?,
+        gender = ?, month = ?, day = ?
+      WHERE id = ?
+    `;
 
-        const values = [
-            data.name, data.phone_number, data.age, data.job, data.marital, data.education,
-            data.default_status, data.housing, data.loan, data.contact, data.duration,
-            data.campaign, data.pdays, data.previous, data.poutcome,
-            data.emp_var_rate, data.cons_price_idx, data.cons_conf_idx, data.euribor3m,
-            data.nr_employed, data.lead_score, data.status_kampanye,
-            data.gender, data.month, data.day, 
-            leadId 
-        ];
+    const values = [
+      data.name, data.phone_number, data.age, data.job, data.marital, data.education,
+      data.default_status, data.housing, data.loan, data.contact, data.duration,
+      data.campaign, data.pdays, data.previous, data.poutcome,
+      data.emp_var_rate, data.cons_price_idx, data.cons_conf_idx, data.euribor3m,
+      data.nr_employed, data.lead_score, data.status_kampanye,
+      data.gender, data.month, data.day, leadId
+    ];
 
-        db.query(sql, values, (err, result) => {
-            if (err) {
-                console.error('❌ SQL ERROR UPDATE data utama:', err);
-                return res.status(500).json({ 
-                    success: false, 
-                    message: `Gagal menyimpan data karena kesalahan database: ${err.message}` 
-                });
-            }
+    try {
+      const result = await runQuery(db, sql, values);
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ success: false, message: "Nasabah tidak ditemukan atau tidak ada perubahan data." });
+      }
+      res.json({ success: true, message: "Data nasabah berhasil diperbarui." });
+    } catch (err) {
+      console.error("❌ SQL ERROR UPDATE data utama:", err);
+      res.status(500).json({ success: false, message: `Gagal menyimpan data: ${err.message}` });
+    }
+  });
 
-            if (result.affectedRows === 0) {
-                return res.status(404).json({ success: false, message: "Nasabah tidak ditemukan atau tidak ada perubahan data." });
-            }
-
-            res.json({ success: true, message: "Data nasabah berhasil diperbarui." });
-        });
-    });
-
-
-router.delete('/:id', (req, res) => {
-        const leadId = req.params.id; 
-        const sql = 'DELETE FROM leads WHERE id = ?';
-        
-        db.query(sql, [leadId], (err, result) => {
-            if (err) {
-                console.error('❌ Error saat menghapus data:', err);
-                return res.status(500).json({ success: false, message: 'Gagal menghapus data karena kesalahan server database.' });
-            }
-            
-            if (result.affectedRows === 0) {
-                return res.status(404).json({ success: false, message: `Nasabah dengan ID ${leadId} tidak ditemukan.` });
-            }
-
-            res.status(200).json({ success: true, message: `Nasabah dengan ID ${leadId} berhasil dihapus.` });
-        });
-    });
+  // DELETE lead
+  router.delete("/:id", async (req, res) => {
+    const leadId = req.params.id;
+    try {
+      const result = await runQuery(db, "DELETE FROM leads WHERE id = ?", [leadId]);
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ success: false, message: `Nasabah dengan ID ${leadId} tidak ditemukan.` });
+      }
+      res.status(200).json({ success: true, message: `Nasabah dengan ID ${leadId} berhasil dihapus.` });
+    } catch (err) {
+      console.error("❌ Error saat menghapus data:", err);
+      res.status(500).json({ success: false, message: "Gagal menghapus data karena kesalahan server database." });
+    }
+  });
 
   return router;
 };
 
-module.exports = { loadCSV, createLeadsRouter };
+module.exports = { createLeadsRouter };
