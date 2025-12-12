@@ -25,7 +25,7 @@ const loadCSV = async (db) => {
       try {
         let leadScore = 0;
         try {
-          const flaskResponse = await axios.post(`https://bankcp-backend.railway.internal/predict`, row);
+          const flaskResponse = await axios.post(`https://bankcp-backend-production.up.railway.app/predict`, row);
           leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
         } catch (err) {
           console.error("❌ Error prediksi model:", err.message);
@@ -78,7 +78,7 @@ const createLeadsRouter = (db) => {
     let leadScore = 0;
 
     try {
-      const flaskResponse = await axios.post(`https://bankcp-backend.railway.internal/predict`, data);
+      const flaskResponse = await axios.post(`https://bankcp-backend-production.up.railway.app/predict`, data);
       leadScore = Math.round((flaskResponse.data.probability ?? 0) * 100);
     } catch (err) {
       console.error("❌ Error prediksi model:", err.message);
