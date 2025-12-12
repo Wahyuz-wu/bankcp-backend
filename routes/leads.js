@@ -51,12 +51,10 @@ const createLeadsRouter = (db) => {
       data.alasan_status || "", data.subscription_status || "not subscribed", data.gender || ""
     ];
 
-    try {
-      const result = await runQuery(db, sql, values);
+    db.query(sql, values, (err, result) => {
+      if (err) return res.status(500).json({ success: false, message: err.message });
       res.status(201).json({ success: true, id: result.insertId, lead_score: leadScore });
-    } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
-    }
+    });
   });
 
   router.get("/", (req, res) => {
