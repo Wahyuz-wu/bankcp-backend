@@ -26,6 +26,8 @@ db.connect(err => {
 app.use(cors({ origin: 'https://bankcp-production.up.railway.app' }));
 app.use(express.json());
 
+app.use(express.static("public"));
+
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const sql = 'SELECT id, username, password, role FROM users WHERE username = ?';
