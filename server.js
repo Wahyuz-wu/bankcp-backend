@@ -1,7 +1,6 @@
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
-const bcrypt = require('bcrypt');
 const { createLeadsRouter } = require('./routes/leads');
 const createReportsRouter = require('./routes/reports');
 
@@ -26,18 +25,26 @@ app.use(express.static("public"));
 app.post('/login', async (req, res, next) => {
   try {
     const { username, password } = req.body;
+
     const [results] = await dbPool.query(
       'SELECT id, username, password, role FROM users WHERE username = ?',
       [username]
     );
 
     const user = results[0];
-    if (!user) return res.status(401).json({ success: false, message: "Invalid credentials" });
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ success: false, message: "Invalid credentials" });
+    if (user.password !== password) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
 
-    res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
+    res.json({ 
+      success: true, 
+      user: { id: user.id, username: user.username, role: user.role } 
+    });
+
   } catch (err) {
     next(err);
   }
