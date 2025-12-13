@@ -129,9 +129,16 @@ const createLeadsRouter = (db) => {
         if (results.length === 0) return res.status(404).json({ error: "Lead tidak ditemukan" });
 
         let aktivitasLama = [];
+
         try {
           aktivitasLama = JSON.parse(results[0].aktivitas || "[]");
-        } catch {
+          if (typeof aktivitasLama === "string") {
+            aktivitasLama = JSON.parse(aktivitasLama);
+          }
+          if (!Array.isArray(aktivitasLama)) {
+            aktivitasLama = [];
+          }
+        } catch (e) {
           aktivitasLama = [];
         }
 
