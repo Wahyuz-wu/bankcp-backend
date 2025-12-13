@@ -113,6 +113,71 @@ const createLeadsRouter = (db) => {
     }
   });
 
+  router.patch("/:id/status", (req, res) => {
+    const { id } = req.params;
+    const { status_kampanye, alasan_status, subscription_status } = req.body;
+
+    if (!status_kampanye || !alasan_status) {
+      return res.status(400).json({ error: "status_kampanye dan alasan_status wajib diisi" });
+    }
+
+    db.query(
+      "SELECT aktivitas, month, day, duration, campaign, poutcome FROM leads WHERE id = ?",
+      [id],
+      (err, results) => {
+        if (err) return res.status(500).json({ error: "Database error saat ambil aktivitas" });
+        if (results.length === 0) return res.status(404).json({ error: "Lead tidak ditemukan" });
+
+        let aktivitasLama = [];
+        try {
+          aktivitasLama = JSON.parse(results[0].aktivitas || "[]");
+        } catch {
+          aktivitasLama = [];
+        }
+
+        const aktivitasBaru = {
+          tanggal: new Date().toISOString().split("T")[0],
+          status: status_kampanye,
+          alasan: alasan_status,
+          month: results[0].month ?? null,
+          day: Number(results[0].day) || null,
+          duration: Number(results[0].duration) || 0,
+          campaign: Number(results[0].campaign) || 0,
+          poutcome: results[0].poutcome ?? null,
+        };
+
+        const aktivitasGabungan = [...aktivitasLama, aktivitasBaru];
+
+        const sql = `
+          UPDATE leads 
+          SET status_kampanye = ?, alasan_status = ?, subscription_status = ?, aktivitas = ?
+          WHERE id = ?
+        `;
+        db.query(
+          sql,
+          [status_kampanye, alasan_status, subscription_status, JSON.stringify(aktivitasGabungan), id],
+          (err, result) => {
+            if (err) {
+              console.error("❌ Error update status:", err);
+              return res.status(500).json({ error: "Database error saat update" });
+            }
+            if (result.affectedRows === 0) {
+              return res.status(404).json({ error: "Lead tidak ditemukan" });
+            }
+            res.json({
+              success: true,
+              id,
+              status_kampanye,
+              alasan_status,
+              subscription_status,
+              aktivitas: aktivitasGabungan,
+            });
+          }
+        );
+      }
+    );
+  });
+
   router.delete("/:id", async (req, res) => {
     const leadId = req.params.id;
     try {
